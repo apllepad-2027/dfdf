@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>매직 트랙패드 배터리 확인</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 50px 20px; }
+    button { font-size: 18px; padding: 14px 24px; border-radius: 10px; border: none; background: #007aff; color: #fff; }
+    #result { margin-top: 30px; font-size: 24px; font-weight: bold; white-space: pre-line; }
+  </style>
+</head>
+<body>
+  <h2>Magic Trackpad 배터리</h2>
+  <button onclick="checkBattery()">트랙패드 연결 및 배터리 확인</button>
+  <div id="result">USB-C 케이블로 연결한 뒤 버튼을 누르세요.</div>
+
+  <script>
+    async function checkBattery() {
+      const out = document.getElementById('result');
+      if (!('hid' in navigator)) {
+        out.innerText = '이 브라우저는 WebHID를 지원하지 않습니다.\n(크롬 브라우저를 사용해 주세요)';
+        return;
+      }
+      try {
+        const devices = await navigator.hid.requestDevice({
+          filters: [{ vendorId: 0x05ac, productId: 0x0324 }, { vendorId: 0x05ac, productId: 0x0265 }]
+        });
+        if (!devices.length) {
+          out.innerText = '선택된 트랙패드가 없습니다.';
+          return;
+        }
+        for (const dev of devices) {
+          if (!dev.opened) await dev.open();
+          try {
+            const view = await dev.receiveFeatureReport(0x90);
+            const flags = view.getUint8(1);
+            const pct = view.getUint8(2);
+            const charging = (flags & 0x02) !== 0;
+            out.innerText = `🔋 잔량: ${pct}%\n(${charging ? '⚡ 충전 중' : '배터리 사용 중'})`;
+            return;
+          } catch (e) {}
+        }
+        out.innerText = '배터리 리포트(0x90)를 읽지 못했습니다.';
+      } catch (err) {
+        out.innerText = '오류: ' + err.message;
+      }
+    }
+  </script>
+</body>
+</html>

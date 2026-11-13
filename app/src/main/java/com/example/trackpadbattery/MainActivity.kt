@@ -5,7 +5,6 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.hardware.usb.UsbConstants
-import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
 import android.os.Bundle
@@ -54,7 +53,10 @@ class MainActivity : Activity() {
                 return
             }
 
-            val device = devices.firstOrNull { it.vendorId == 0x05AC } ?: devices.first()
+            // Apple VID(0x05AC), USB-C PID(0x0324) / Lightning PID(0x0265) 우선 선택
+            val device = devices.firstOrNull {
+                it.vendorId == 0x05AC && (it.productId == 0x0324 || it.productId == 0x0265)
+            } ?: devices.firstOrNull { it.vendorId == 0x05AC } ?: devices.first()
 
             if (!usbManager.hasPermission(device)) {
                 val flags = if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_IMMUTABLE else 0
@@ -70,18 +72,23 @@ class MainActivity : Activity() {
             }
 
             try {
-                val buf = ByteArray(8)
-                val reqType = UsbConstants.USB_DIR_IN or UsbConstants.USB_TYPE_CLASS or 0x01
+                // MagicTrackpad2ForWindows(AmtPtpReadBatteryLevel)와 동일하게 128바이트 버퍼 사용
+                val buf = ByteArray(128)
+                val reqType = UsbConstants.USB_DIR_IN or UsbConstants.USB_TYPE_CLASS or 0x01 // 0xA1
 
                 for (i in 0 until device.interfaceCount) {
                     val intf = device.getInterface(i)
                     if (!conn.claimInterface(intf, true)) continue
 
-                    for (reportVal in intArrayOf(0x0190, 0x0390)) {
-                        val len = conn.controlTransfer(reqType, 0x01, reportVal, intf.id, buf, buf.size, 1000)
-                        if (len >= 3 && (buf[0].toInt() and 0xFF) == 0x90) {
-                            val flags = buf[1].toInt() and 0xFF
-                            val pct = buf[2].toInt() and 0xFF
+                    buf.fill(0)
+                    buf[0] = 0x90.toByte()
+
+                    // HID GET_REPORT(0x01), Input Report 0x90(0x0190)
+                    val len = conn.controlTransfer(reqType, 0x01, 0x0190, intf.id, buf, buf.size, 1000)
+                    if (len >= 3 && (buf[0].toInt() and 0xFF) == 0x90) {
+                        val flags = buf[1].toInt() and 0xFF
+                        val pct = buf[2].toInt() and 0xFF
+                        if (pct in 0..100) {
                             val charging = (flags and 0x02) != 0
                             statusText.text = "🔋 Magic Trackpad 배터리: $pct%\n(${if (charging) "⚡ 충전 중" else "배터리 사용 중"})"
                             conn.releaseInterface(intf)
@@ -90,7 +97,7 @@ class MainActivity : Activity() {
                     }
                     conn.releaseInterface(intf)
                 }
-                statusText.text = "장치는 찾았으나(VID:${device.vendorId}) 배터리 리포트(0x90) 응답이 없습니다."
+                statusText.text = "장치는 찾았으나(VID:${device.vendorId}, PID:${device.productId})\n배터리 리포트(0x90) 응답이 없습니다."
             } finally {
                 conn.close()
             }
@@ -99,5 +106,3 @@ class MainActivity : Activity() {
         }
     }
 }
-
-                    

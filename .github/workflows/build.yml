@@ -11,6 +11,50 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Convert Icon Background to Black
+        run: |
+          pip install pillow numpy
+          python3 - << 'EOF'
+          import glob, os
+          from PIL import Image
+          import numpy as np
+          from collections import deque
+
+          # mipmap 폴더 안의 모든 이미지(ic_launcher.*) 찾아서 회색 배경을 검은색 PNG로 변환
+          for p in glob.glob("app/src/main/res/mipmap*/*"):
+              if os.path.basename(p).startswith("."):
+                  os.remove(p)
+                  continue
+              img = Image.open(p).convert("RGBA")
+              arr = np.array(img)
+              r, g, b = arr[:,:,0].astype(int), arr[:,:,1].astype(int), arr[:,:,2].astype(int)
+              bg = (np.minimum(np.minimum(r, g), b) > 195) & ((np.maximum(np.maximum(r, g), b) - np.minimum(np.minimum(r, g), b)) < 25)
+              h, w = bg.shape
+              vis = np.zeros((h, w), dtype=bool)
+              q = deque()
+              for x in range(w):
+                  if bg[0, x]: q.append((0, x)); vis[0, x] = True
+                  if bg[h-1, x]: q.append((h-1, x)); vis[h-1, x] = True
+              for y in range(h):
+                  if bg[y, 0]: q.append((y, 0)); vis[y, 0] = True
+                  if bg[y, w-1]: q.append((y, w-1)); vis[y, w-1] = True
+              while q:
+                  cy, cx = q.popleft()
+                  for dy, dx in ((-1,0),(1,0),(0,-1),(0,1)):
+                      ny, nx = cy+dy, cx+dx
+                      if 0 <= ny < h and 0 <= nx < w and not vis[ny, nx] and bg[ny, nx]:
+                          vis[ny, nx] = True
+                          q.append((ny, nx))
+              arr[vis, 0] = 0
+              arr[vis, 1] = 0
+              arr[vis, 2] = 0
+              arr[vis, 3] = 255
+              out_path = os.path.join(os.path.dirname(p), "ic_launcher.png")
+              Image.fromarray(arr).convert("RGB").save(out_path)
+              if p != out_path and os.path.exists(p):
+                  os.remove(p)
+          EOF
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:

@@ -13,7 +13,6 @@ jobs:
 
       - name: Prepare Black Background Icon
         run: |
-          python3 -m pip install --upgrade pip --break-system-packages || true
           python3 -m pip install pillow numpy --break-system-packages || python3 -m pip install pillow numpy
           python3 - << 'EOF'
           import os, shutil
@@ -21,16 +20,21 @@ jobs:
           import numpy as np
           from collections import deque
 
-          # 1. 저장소 전체에서 업로드된 이미지 파일(.jpg, .jpeg, .png) 찾기
-          img_candidates = []
+          # 1. 폴더를 지우기 전에 먼저 이미지를 메모리에 읽어두기!
+          loaded_img = None
           for root, dirs, files in os.walk("."):
               if ".git" in root or "build" in root:
                   continue
               for f in files:
                   if f.lower().endswith((".jpg", ".jpeg", ".png")):
-                      img_candidates.append(os.path.join(root, f))
+                      src_path = os.path.join(root, f)
+                      print("Loading image:", src_path)
+                      loaded_img = Image.open(src_path).convert("RGBA")
+                      break
+              if loaded_img is not None:
+                  break
 
-          # 2. 기존 res/mipmap* 및 잘못 만들어진 app/src/main/mipmap* 폴더 깨끗하게 초기화
+          # 2. 이제 기존 mipmap 폴더들과 임시 파일(.keep 등) 깨끗하게 청소
           if os.path.exists("app/src/main/mipmap-xxxhdpi"):
               shutil.rmtree("app/src/main/mipmap-xxxhdpi", ignore_errors=True)
           if os.path.exists("app/src/main/res"):
@@ -43,11 +47,9 @@ jobs:
           os.makedirs(target_dir, exist_ok=True)
           out_path = os.path.join(target_dir, "ic_launcher.png")
 
-          if img_candidates:
-              src_img = img_candidates[0]
-              print("Found image:", src_img)
-              img = Image.open(src_img).convert("RGBA")
-              arr = np.array(img)
+          # 3. 회색 배경을 순수 검은색(#000000)으로 변환해서 ic_launcher.png로 저장
+          if loaded_img is not None:
+              arr = np.array(loaded_img)
               r, g, b = arr[:,:,0].astype(int), arr[:,:,1].astype(int), arr[:,:,2].astype(int)
               bg = (np.minimum(np.minimum(r, g), b) > 195) & ((np.maximum(np.maximum(r, g), b) - np.minimum(np.minimum(r, g), b)) < 25)
               h, w = bg.shape
@@ -71,9 +73,8 @@ jobs:
               arr[vis, 2] = 0
               arr[vis, 3] = 255
               Image.fromarray(arr).convert("RGB").save(out_path)
+              print("Saved black-background icon to:", out_path)
           else:
-              # 만약 이미지를 못 찾았더라도 빌드가 절대 실패하지 않게 기본 검은 아이콘 생성
-              print("No image found, creating fallback icon")
               Image.new("RGB", (512, 512), (0, 0, 0)).save(out_path)
           EOF
 

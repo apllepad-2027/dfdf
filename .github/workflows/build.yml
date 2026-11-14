@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Prepare Black Background Icon
+      - name: Prepare Full-Bleed Black Adaptive Icon
         run: |
           python3 -m pip install pillow numpy --break-system-packages || python3 -m pip install pillow numpy
           python3 - << 'EOF'
@@ -20,7 +20,7 @@ jobs:
           import numpy as np
           from collections import deque
 
-          # 1. 폴더를 지우기 전에 먼저 이미지를 메모리에 읽어두기!
+          # 1. 저장소 내 페페 이미지 먼저 읽기
           loaded_img = None
           for root, dirs, files in os.walk("."):
               if ".git" in root or "build" in root:
@@ -34,7 +34,7 @@ jobs:
               if loaded_img is not None:
                   break
 
-          # 2. 이제 기존 mipmap 폴더들과 임시 파일(.keep 등) 깨끗하게 청소
+          # 2. 기존 mipmap 폴더 정리
           if os.path.exists("app/src/main/mipmap-xxxhdpi"):
               shutil.rmtree("app/src/main/mipmap-xxxhdpi", ignore_errors=True)
           if os.path.exists("app/src/main/res"):
@@ -44,10 +44,11 @@ jobs:
                       shutil.rmtree(p, ignore_errors=True)
 
           target_dir = "app/src/main/res/mipmap-xxxhdpi"
+          anydpi_dir = "app/src/main/res/mipmap-anydpi-v26"
           os.makedirs(target_dir, exist_ok=True)
-          out_path = os.path.join(target_dir, "ic_launcher.png")
+          os.makedirs(anydpi_dir, exist_ok=True)
 
-          # 3. 회색 배경을 순수 검은색(#000000)으로 변환해서 ic_launcher.png로 저장
+          # 3. 회색 배경을 검은색으로 바꾸고 Adaptive Icon 안전 영역(가운데 66%)에 맞게 검은 여백 추가
           if loaded_img is not None:
               arr = np.array(loaded_img)
               r, g, b = arr[:,:,0].astype(int), arr[:,:,1].astype(int), arr[:,:,2].astype(int)
@@ -72,10 +73,29 @@ jobs:
               arr[vis, 1] = 0
               arr[vis, 2] = 0
               arr[vis, 3] = 255
-              Image.fromarray(arr).convert("RGB").save(out_path)
-              print("Saved black-background icon to:", out_path)
+              clean_pepe = Image.fromarray(arr).convert("RGBA")
+
+              # Adaptive Icon용 432x432 캔버스(완전 검정) 중앙에 280x280 크기로 페페 배치 (테두리 잘림 및 흰 여백 완전 방지)
+              canvas = Image.new("RGBA", (432, 432), (0, 0, 0, 255))
+              resized = clean_pepe.resize((280, 280), Image.LANCZOS)
+              canvas.paste(resized, ((432 - 280) // 2, (432 - 280) // 2), resized)
+              canvas.convert("RGB").save(os.path.join(target_dir, "ic_launcher_fg.png"))
+              clean_pepe.resize((192, 192), Image.LANCZOS).convert("RGB").save(os.path.join(target_dir, "ic_launcher.png"))
           else:
-              Image.new("RGB", (512, 512), (0, 0, 0)).save(out_path)
+              Image.new("RGB", (432, 432), (0, 0, 0)).save(os.path.join(target_dir, "ic_launcher_fg.png"))
+              Image.new("RGB", (192, 192), (0, 0, 0)).save(os.path.join(target_dir, "ic_launcher.png"))
+
+          # 4. 갤럭시 홈 화면에서 흰 테두리 없이 29CM처럼 꽉 찬 검은 배경이 나오는 Adaptive Icon XML 자동 생성
+          xml_content = """<?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@android:color/black" />
+              <foreground android:drawable="@mipmap/ic_launcher_fg" />
+          </adaptive-icon>
+          """.strip()
+          with open(os.path.join(anydpi_dir, "ic_launcher.xml"), "w") as f:
+              f.write(xml_content)
+          with open(os.path.join(anydpi_dir, "ic_launcher_round.xml"), "w") as f:
+              f.write(xml_content)
           EOF
 
       - name: Set up JDK 17

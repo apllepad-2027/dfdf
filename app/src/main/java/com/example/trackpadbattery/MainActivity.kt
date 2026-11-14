@@ -21,8 +21,10 @@ import android.os.Build
 import android.os.Bundle
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.Window
+import android.view.animation.OvershootInterpolator
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -52,21 +54,65 @@ class MainActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.parseColor("#1C1C1E"))
+            setBackgroundColor(Color.parseColor("#000000"))
             setPadding(dp(28), dp(32), dp(28), dp(32))
         }
 
-        // iOS 위젯 스타일 배터리 카드 (터치 시 새로고침)
+        val normalBg = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(36).toFloat()
+            setColor(Color.parseColor("#B8BCC2"))
+        }
+
+        val pressedBg = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(36).toFloat()
+            setColor(Color.parseColor("#9FA4AC"))
+        }
+
+        // iOS 위젯 스타일 배터리 카드 (터치 시 눌리는 시각 애니메이션만 적용)
         val widgetCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(36).toFloat()
-                setColor(Color.parseColor("#B8BCC2"))
-            }
+            background = normalBg
+            isClickable = true
+            isFocusable = true
             setPadding(dp(36), dp(36), dp(36), dp(32))
-            setOnClickListener { checkBattery() }
+
+            setOnTouchListener { v, event ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        v.background = pressedBg
+                        v.animate()
+                            .scaleX(0.94f)
+                            .scaleY(0.94f)
+                            .setDuration(80)
+                            .start()
+                        true
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        v.background = normalBg
+                        v.animate()
+                            .scaleX(1.0f)
+                            .scaleY(1.0f)
+                            .setDuration(220)
+                            .setInterpolator(OvershootInterpolator(2.2f))
+                            .start()
+                        checkBattery()
+                        true
+                    }
+                    MotionEvent.ACTION_CANCEL -> {
+                        v.background = normalBg
+                        v.animate()
+                            .scaleX(1.0f)
+                            .scaleY(1.0f)
+                            .setDuration(150)
+                            .start()
+                        true
+                    }
+                    else -> false
+                }
+            }
         }
 
         ringView = BatteryRingView(this).apply {
@@ -84,7 +130,7 @@ class MainActivity : Activity() {
         }
 
         statusSubText = TextView(this).apply {
-            text = "C타입 케이블을 연결하거나 위젯을 터치하세요"
+            text = "위젯을 누르면 배터리를 확인합니다"
             setTextColor(Color.parseColor("#3A3A3C"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             gravity = Gravity.CENTER
@@ -134,7 +180,7 @@ class MainActivity : Activity() {
             if (devices.isEmpty()) {
                 ringView.setBattery(-1, false)
                 percentText.text = "--%"
-                statusSubText.text = "C타입 케이블을 연결하거나 위젯을 터치하세요"
+                statusSubText.text = "C타입 케이블을 연결하고 위젯을 눌러주세요"
                 return
             }
 
@@ -146,7 +192,7 @@ class MainActivity : Activity() {
                 val flags = if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_IMMUTABLE else 0
                 val pi = PendingIntent.getBroadcast(this, 0, Intent("USB_PERM"), flags)
                 usbManager.requestPermission(device, pi)
-                statusSubText.text = "권한 팝업에서 [확인] 후 위젯을 터치하세요"
+                statusSubText.text = "권한 팝업에서 [확인] 후 위젯을 눌러주세요"
                 return
             }
 
@@ -187,14 +233,14 @@ class MainActivity : Activity() {
                     val charging = (b1 and 0x02) != 0
                     ringView.setBattery(b2, charging)
                     percentText.text = "$b2%"
-                    statusSubText.text = "위젯을 터치하면 새로고침됩니다"
+                    statusSubText.text = "위젯을 누르면 새로고침됩니다"
                     conn.releaseInterface(intf)
                     return
                 }
             }
             conn.releaseInterface(intf)
         }
-        statusSubText.text = "트랙패드를 살짝 문지른 뒤 위젯을 터치하세요"
+        statusSubText.text = "트랙패드를 살짝 문지른 뒤 위젯을 눌러주세요"
     }
 
     private fun dp(value: Int): Int =
